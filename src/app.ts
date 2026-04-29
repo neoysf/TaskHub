@@ -20,6 +20,7 @@ import uploadsRoutes from "./routes/uploads.routes";
 
 export function createApp() {
   const app = express();
+  app.set('trust proxy', 1);
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
