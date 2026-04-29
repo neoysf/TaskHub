@@ -1,4 +1,7 @@
-generator client { provider = "prisma-client-js" }
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
 datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
 
 enum UserRole { USER ADMIN MODERATOR }
