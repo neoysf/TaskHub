@@ -1,0 +1,305 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+enum UserRole { USER ADMIN MODERATOR }
+enum JobCategory { HOME_SERVICES DELIVERY TECHNICAL EDUCATION EVENTS }
+enum JobStatus { OPEN IN_REVIEW ASSIGNED IN_PROGRESS COMPLETED CANCELLED DISPUTED }
+enum JobUrgency { STANDARD URGENT PREMIUM }
+enum ApplicationStatus { PENDING ACCEPTED REJECTED WITHDRAWN }
+enum PaymentStatus { PENDING HELD_IN_ESCROW RELEASED REFUNDED FAILED }
+enum VerificationStatus { UNVERIFIED PENDING VERIFIED REJECTED }
+enum BadgeType { VERIFIED TOP_RATED FAST_RESPONDER RELIABLE RISING_STAR EXPERT }
+enum DisputeStatus { OPEN UNDER_REVIEW RESOLVED_WORKER RESOLVED_EMPLOYER RESOLVED_SPLIT }
+enum NotificationType {
+  JOB_APPLICATION APPLICATION_ACCEPTED APPLICATION_REJECTED JOB_ASSIGNED
+  JOB_STARTED JOB_COMPLETED PAYMENT_RECEIVED NEW_MESSAGE NEW_REVIEW
+  DISPUTE_OPENED VERIFICATION_APPROVED VERIFICATION_REJECTED BADGE_EARNED
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  phone           String?   @unique
+  passwordHash    String
+  fullName        String
+  username        String    @unique
+  avatarUrl       String?
+  bio             String?
+  dateOfBirth     DateTime
+  city            String?
+  address         String?
+  latitude        Float?
+  longitude       Float?
+  role            UserRole  @default(USER)
+  isActive        Boolean   @default(true)
+  emailVerified   Boolean   @default(false)
+  phoneVerified   Boolean   @default(false)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  trustScore         Int                @default(0)
+  ratingAvg          Float    @default(0)
+  ratingCount        Int      @default(0)
+  jobsCompleted      Int      @default(0)
+  jobsPosted         Int      @default(0)
+  totalEarned        Decimal  @default(0) @db.Decimal(12, 2)
+  responseTimeMinutes Int?
+  stripeAccountId    String?
+  stripeOnboarded    Boolean  @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastLoginAt     DateTime?
+
+  postedJobs       Job[]            @relation("EmployerJobs")
+  workedJobs       Job[]            @relation("WorkerJobs")
+  applications     Application[]
+  skills           UserSkill[]
+  badges           UserBadge[]
+  verification     Verification?
+  reviewsGiven     Review[]         @relation("ReviewAuthor")
+  reviewsReceived  Review[]         @relation("ReviewSubject")
+  conversations1   Conversation[]   @relation("User1")
+  conversations2   Conversation[]   @relation("User2")
+  messages         Message[]
+  paymentsAsEmployer Payment[]      @relation("PaymentEmployer")
+  paymentsAsWorker  Payment[]       @relation("PaymentWorker")
+  disputesRaised   Dispute[]        @relation("DisputeRaiser")
+  notifications    Notification[]
+  refreshTokens    RefreshToken[]
+
+  @@index([city])
+  @@index([role])
+  @@index([verificationStatus])
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  token       String   @unique
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  revokedAt   DateTime?
+  @@index([userId])
+}
+
+model Verification {
+  id              String             @id @default(uuid())
+  userId          String             @unique
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentType    String
+  documentNumber  String
+  frontImageUrl   String
+  backImageUrl    String?
+  selfieUrl       String
+  status          VerificationStatus @default(PENDING)
+  rejectionReason String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  submittedAt     DateTime           @default(now())
+}
+
+model Skill {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  category    JobCategory
+  users       UserSkill[]
+  @@index([category])
+}
+
+model UserSkill {
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillId     String
+  skill       Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  level       Int     @default(1)
+  createdAt   DateTime @default(now())
+  @@id([userId, skillId])
+}
+
+model UserBadge {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        BadgeType
+  awardedAt   DateTime  @default(now())
+  metadata    Json?
+  @@unique([userId, type])
+  @@index([userId])
+}
+
+model Job {
+  id              String       @id @default(uuid())
+  title           String
+  description     String       @db.Text
+  category        JobCategory
+  status          JobStatus    @default(OPEN)
+  urgency         JobUrgency   @default(STANDARD)
+  budgetMin       Decimal      @db.Decimal(10, 2)
+  budgetMax       Decimal      @db.Decimal(10, 2)
+  finalPrice      Decimal?     @db.Decimal(10, 2)
+  commissionRate  Float
+  estimatedHours  Float?
+  scheduledStart  DateTime?
+  scheduledEnd    DateTime?
+  actualStartAt   DateTime?
+  actualEndAt     DateTime?
+  employerConfirmedStart Boolean @default(false)
+  workerConfirmedStart   Boolean @default(false)
+  employerConfirmedEnd   Boolean @default(false)
+  workerConfirmedEnd     Boolean @default(false)
+  city            String
+  address         String?
+  latitude        Float?
+  longitude       Float?
+  isRemote        Boolean      @default(false)
+  employerId      String
+  employer        User         @relation("EmployerJobs", fields: [employerId], references: [id])
+  workerId        String?
+  worker          User?        @relation("WorkerJobs", fields: [workerId], references: [id])
+  viewsCount      Int          @default(0)
+  applicationsCount Int        @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  publishedAt     DateTime?
+  closedAt        DateTime?
+
+  applications    Application[]
+  payment         Payment?
+  reviews         Review[]
+  conversation    Conversation?
+  dispute         Dispute?
+  attachments     JobAttachment[]
+
+  @@index([category, status])
+  @@index([city])
+  @@index([employerId])
+  @@index([workerId])
+  @@index([status, publishedAt])
+}
+
+model JobAttachment {
+  id        String   @id @default(uuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  url       String
+  filename  String
+  mimeType  String
+  size      Int
+  createdAt DateTime @default(now())
+}
+
+model Application {
+  id            String            @id @default(uuid())
+  jobId         String
+  job           Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  workerId      String
+  worker        User              @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  proposedPrice Decimal           @db.Decimal(10, 2)
+  coverLetter   String            @db.Text
+  estimatedDays Int?
+  status        ApplicationStatus @default(PENDING)
+  createdAt     DateTime          @default(now())
+  respondedAt   DateTime?
+  @@unique([jobId, workerId])
+  @@index([jobId])
+  @@index([workerId])
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  jobId             String        @unique
+  job               Job           @relation(fields: [jobId], references: [id])
+  employerId        String
+  employer          User          @relation("PaymentEmployer", fields: [employerId], references: [id])
+  workerId          String
+  worker            User          @relation("PaymentWorker", fields: [workerId], references: [id])
+  amount            Decimal       @db.Decimal(10, 2)
+  commissionAmount  Decimal       @db.Decimal(10, 2)
+  workerAmount      Decimal       @db.Decimal(10, 2)
+  currency          String        @default("AZN")
+  status            PaymentStatus @default(PENDING)
+  stripePaymentIntentId String?
+  stripeTransferId  String?
+  createdAt         DateTime      @default(now())
+  fundedAt          DateTime?
+  releasedAt        DateTime?
+  refundedAt        DateTime?
+  @@index([employerId])
+  @@index([workerId])
+  @@index([status])
+}
+
+model Review {
+  id          String   @id @default(uuid())
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User     @relation("ReviewAuthor", fields: [authorId], references: [id])
+  subjectId   String
+  subject     User     @relation("ReviewSubject", fields: [subjectId], references: [id])
+  rating      Int
+  comment     String?  @db.Text
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  @@unique([jobId, authorId])
+  @@index([subjectId])
+}
+
+model Conversation {
+  id          String    @id @default(uuid())
+  jobId       String?   @unique
+  job         Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  user1Id     String
+  user1       User      @relation("User1", fields: [user1Id], references: [id])
+  user2Id     String
+  user2       User      @relation("User2", fields: [user2Id], references: [id])
+  lastMessageAt DateTime @default(now())
+  createdAt   DateTime  @default(now())
+  messages    Message[]
+  @@unique([user1Id, user2Id, jobId])
+  @@index([user1Id])
+  @@index([user2Id])
+}
+
+model Message {
+  id              String       @id @default(uuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId        String
+  sender          User         @relation(fields: [senderId], references: [id])
+  content         String       @db.Text
+  attachmentUrl   String?
+  isRead          Boolean      @default(false)
+  readAt          DateTime?
+  createdAt       DateTime     @default(now())
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+model Dispute {
+  id          String        @id @default(uuid())
+  jobId       String        @unique
+  job         Job           @relation(fields: [jobId], references: [id])
+  raisedById  String
+  raisedBy    User          @relation("DisputeRaiser", fields: [raisedById], references: [id])
+  reason      String        @db.Text
+  evidence    Json?
+  status      DisputeStatus @default(OPEN)
+  resolution  String?       @db.Text
+  resolvedBy  String?
+  createdAt   DateTime      @default(now())
+  resolvedAt  DateTime?
+  @@index([status])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  @@index([userId, isRead, createdAt])
+}
